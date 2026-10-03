@@ -80,20 +80,32 @@ npm run dev        # 默认 http://localhost:5173，/api 已代理到 localhost:
 
 ---
 
-## 4. 部署到 Cloudflare（生产）
+## 4. 部署到 Cloudflare（Cloudflare 直接绑定 GitHub 仓库，push 即部署）
 
-### 4.1 前置：Cloudflare 账号准备
+本仓库已内置 GitHub Actions：**把 GitHub 仓库绑定到 Cloudflare（提供 `CF_API_TOKEN`）后，每次 `git push` 到 `main` 即自动部署**——创建/绑定 D1 → 解析 `database_id` 并写入配置 → 迁移建表 → 注入密钥 → 部署 Worker + 前端 Pages。你只需在 Cloudflare 拿到 Account ID 与 API Token，并在 GitHub 配置好 Secrets（见 §5），其余全自动，无需手动改 `wrangler.toml`。
 
-1. 注册 Cloudflare 账号，获取 **Account ID**（Dashboard 右侧）。
-2. 在 Cloudflare 创建 **API Token**（权限：Workers、D1、Pages 编辑），记为 `CF_API_TOKEN`。
-3. 在 Cloudflare 控制台创建一个 **D1 数据库**，名称 `domain_monitor`，把它的 **database_id** 填到根 `wrangler.toml` 的 `d1_databases.database_id`。
+### 4.1 一次性准备（本地只需做这两步）
 
-### 4.2 设置 Secrets（务必使用强随机值）
+1. 在 Cloudflare 拿到 **Account ID**（Dashboard 右侧）与 **API Token**（权限：Workers、D1、Pages 编辑），记为 `CF_API_TOKEN`。
+2. 在 GitHub 仓库 `Settings → Secrets and variables → Actions` 填入 §5 的 12 个 Secret（`CF_API_TOKEN` / `CF_ACCOUNT_ID` + 10 个运行密钥）。
+3. `git push -u origin main` —— CI 会自动创建名为 `domain_monitor` 的 D1、解析其 `database_id`、建表、部署。**无需手动编辑 `wrangler.toml`。**
+
+> 若你更习惯纯 Dashboard「连接 Git」（不使用 Actions），见 §4.4 备选方案。
+
+### 4.2 登录密码（变量 `ADMIN_PASSWORD`，可设初始密码 / 忘记后重置）★
+
+- 后台登录口令完全由 Cloudflare **变量 `ADMIN_PASSWORD`** 控制，代码中不做硬编码。
+- **设置初始密码**：Cloudflare Dashboard → 你的 Worker → Settings → Variables → 添加变量 `ADMIN_PASSWORD`（类型选 **Secret**），或用命令 `wrangler secret put ADMIN_PASSWORD` 输入口令。
+- **忘记密码 → 重置**：直接重新设置 `ADMIN_PASSWORD`（Dashboard 编辑该变量，或再次 `wrangler secret put ADMIN_PASSWORD`）。改完**下次登录即用新密码**，无需改代码、无需重新部署。
+- **强制全部下线**：`SESSION_SECRET` 用于签名登录 Cookie。修改/轮换 `SESSION_SECRET` 后，所有已登录会话立即失效（需重新登录）。单独改 `ADMIN_PASSWORD` 不会让已签发的 Cookie 失效（旧会话 7 天内仍有效）；如需立即作废可同时轮换 `SESSION_SECRET`。
+- 两个变量均建议在 Cloudflare 中设为 **Secret**（隐藏明文），并使用强随机值。
+
+### 4.3 设置运行密钥（Secrets / 变量，按需）
+
+除 `ADMIN_PASSWORD` / `SESSION_SECRET` 外，各通知渠道凭据也是 Cloudflare Secret，未配置则对应渠道发送时自动跳过：
 
 ```bash
 cd worker
-wrangler secret put ADMIN_PASSWORD        # 单管理员登录口令
-wrangler secret put SESSION_SECRET        # HMAC 签名密钥（建议 >=32 字节随机串）
 wrangler secret put RESEND_API_KEY        # 邮件（Resend）
 wrangler secret put TG_BOT_TOKEN          # Telegram Bot Token
 wrangler secret put TG_CHAT_ID            # Telegram 接收 Chat ID
@@ -104,34 +116,27 @@ wrangler secret put WHOIS_API_BASE        # .cn 回退付费 WHOIS/可用性 API
 wrangler secret put WHOIS_API_KEY         # 付费 WHOIS API Key
 ```
 
-> 不配置某渠道的凭据，该渠道在发送时会被跳过（不影响其他渠道与系统运行）。
+> 这些也可以在 Cloudflare Dashboard → Worker → Settings → Variables 里直接添加；通过 GitHub Actions 部署时则统一在 GitHub Secrets 配置（CI 自动 `wrangler secret put` 注入）。
 
-### 4.3 部署 Worker + 迁移 D1
+### 4.4 备选：Cloudflare Dashboard「连接 Git」（不使用 Actions）
 
-```bash
-cd worker
-npx wrangler d1 migrations apply domain_monitor --remote
-npx wrangler deploy
-```
-
-也可直接 `git push origin main`，由 `.github/workflows/deploy-worker.yml` 自动完成「创建 DB → 迁移 → 注入 Secrets → 部署」。
-
-### 4.4 部署前端到 Pages
-
-方式 A — Git 集成（推荐）：Cloudflare Dashboard → Pages → 连接 GitHub 仓库，框架预设 **Vite**，构建目录 `dist`，构建命令 `npm run build`（根目录 `frontend`）。
-
-方式 B — 手动：
-
-```bash
-cd frontend && npm install && npm run build
-npx wrangler pages deploy dist --project-name=domain-drop-monitor
-```
-
-或直接 `git push`，由 `.github/workflows/deploy-pages.yml` 自动构建部署。
+- **前端 Pages**：Dashboard → Workers & Pages → 创建 → Pages → 连接 Git 仓库 → 选本仓库 → 框架预设 **Vite**，构建目录 `dist`，构建命令 `npm run build`（根目录 `frontend`）。保存后每次 push 自动重新部署。
+- **后端 Worker + D1**：Dashboard 创建 Worker 并连接 Git 可自动部署代码，但 **D1 建表需在 CLI 执行一次**：`wrangler d1 migrations apply domain_monitor --remote`。推荐仍用 §4.1 的 Actions 以省去手动步骤。
+- 若同时启用 Actions 与 Dashboard 连接，二者会重复部署同一项目，建议**二选一**。
 
 ### 4.5 自定义域（推荐，避免跨域 Cookie 问题）
 
-将 Worker 与 Pages 绑定到**同一 zone / 自定义域**（如 `monitor.example.com`），确保 API 请求与前端同站，`dm_session` Cookie 可正常写入与携带。
+将 Worker 与 Pages 绑定到**同一 zone / 自定义域**（如 `monitor.example.com`），确保 API 请求与前端同站，`dm_session` Cookie 可正常写入与携带。不同域时需在前端设置 `VITE_API_BASE=https://<worker-subdomain>.workers.dev`。
+
+### 4.6 本地手动部署（不使用 CI 时）
+
+```bash
+cd worker && npx wrangler d1 create domain_monitor   # 把输出 id 填到 wrangler.toml
+npx wrangler d1 migrations apply domain_monitor --remote
+npx wrangler deploy
+cd ../frontend && npm install && npm run build
+npx wrangler pages deploy dist --project-name=domain-drop-monitor
+```
 
 ---
 
@@ -187,8 +192,9 @@ npx wrangler pages deploy dist --project-name=domain-drop-monitor
 
 ## 8. 常见问题
 
-- **本地 `wrangler dev` 报 D1 错误**：确认已执行 `wrangler d1 create` 并在 `wrangler.toml` 填好 `database_id`。
-- **登录后接口 401**：检查 `ADMIN_PASSWORD` / `SESSION_SECRET` 是否正确设置；确认前端与 Worker 同站（自定义域）以携带 Cookie。
+- **D1 数据库怎么建**：用 GitHub Actions 部署时**无需手动建**——`git push` 会自动创建名为 `domain_monitor` 的 D1 并把 `database_id` 写入 `wrangler.toml`、自动执行迁移建表。本地手动部署才需要 `wrangler d1 create` 后填 id。
+- **忘记后台登录密码**：在 Cloudflare 重新设置/编辑变量 `ADMIN_PASSWORD`（或 `wrangler secret put ADMIN_PASSWORD`），下次登录即用新密码；如需让所有已登录设备立即失效，同时轮换 `SESSION_SECRET`。详见 §4.2。
+- **登录后接口 401**：检查 `ADMIN_PASSWORD` / `SESSION_SECRET` 是否正确设置；确认前端与 Worker 同站（自定义域）以携带 `dm_session` Cookie。
 - **.cn 检测 unknown**：RDAP 不可达且未配置 `WHOIS_API_BASE` / `WHOIS_API_KEY`，属预期降级行为。
 
 ---
