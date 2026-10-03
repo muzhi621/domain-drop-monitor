@@ -1,0 +1,16 @@
+{
+  "name": "domain-drop-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "域名掉落监测与可注册性通知系统（Cloudflare Workers + D1 + Hono）",
+  "scripts": {
+    "install:all": "npm install && npm --prefix worker install && npm --prefix frontend install",
+    "dev:worker": "npm --prefix worker run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "deploy:worker": "npm --prefix worker run deploy",
+    "typecheck:worker": "npm --prefix worker run typecheck",
+    "typecheck:frontend": "npm --prefix frontend run typecheck"
+  },
+  "license": "MIT"
+}

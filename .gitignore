@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Local secrets (NEVER commit real values)
+.dev.vars
+
+# Build output
+frontend/dist/
+frontend/*.timestamp-*.mjs
+worker/.wrangler/
+.wrangler/
+
+# Logs
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

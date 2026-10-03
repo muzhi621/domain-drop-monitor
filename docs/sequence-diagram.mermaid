@@ -1,0 +1,33 @@
+sequenceDiagram
+    participant Cron as Cron(每1分钟)
+    participant S as Scheduler
+    participant DB as D1.domains
+    participant C as Checker
+    participant R as RDAP/WHOIS
+    participant H as D1.status_history
+    participant N as Notifier
+    participant CH as 5 Channels
+
+    Cron->>S: scheduled(event)
+    S->>DB: SELECT domain WHERE next_check_at<=now ORDER BY next_check_at LIMIT 50
+    loop 每个到期域名(≤50)
+        S->>C: checkAvailability(domain)
+        C->>R: RDAP(.cn失败回退WHOIS_API)
+        R-->>C: 原始状态
+        C-->>S: CheckResult(status)
+        S->>DB: 读取旧 status
+        alt 状态变更
+            S->>H: INSERT(old,new,trigger_action)
+            S->>DB: UPDATE status, updated_at
+            alt 变为 available(drop) 或 首次进入 redemptionPeriod/pendingDelete(预警)
+                S->>N: dispatch(domain, event)
+                N->>N: 按 notif_config + 抑制间隔过滤
+                N->>CH: 向启用渠道 send()
+                CH-->>N: ack
+                N->>DB: UPDATE last_notify_at
+            end
+        else 未变更
+            S->>DB: UPDATE last_checked_at
+        end
+        S->>DB: UPDATE next_check_at(按 priority 步进)
+    end

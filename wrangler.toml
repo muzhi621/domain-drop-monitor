@@ -1,0 +1,36 @@
+name = "domain-drop-monitor"
+main = "worker/src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# D1 database binding (SQLite at the edge)
+# ---------------------------------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "domain_monitor"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# ---------------------------------------------------------------------------
+# Cron trigger — runs every minute, pulls due domains and batch-checks them.
+# Cloudflare free plan allows cron with 1-minute granularity (max 3 triggers/worker).
+# ---------------------------------------------------------------------------
+[[triggers]]
+crons = ["* * * * *"]
+
+# ---------------------------------------------------------------------------
+# Public vars (none required). Secrets are NOT stored here — they are injected
+# at runtime via `wrangler secret put` (or the Cloudflare dashboard).
+#
+# Required secrets:
+#   ADMIN_PASSWORD       单管理员登录口令
+#   SESSION_SECRET       HMAC 签名 Cookie 密钥（建议 >=32 字节随机串）
+#   RESEND_API_KEY       邮件渠道（Resend）
+#   TG_BOT_TOKEN         Telegram Bot Token
+#   TG_CHAT_ID           Telegram 接收 Chat ID
+#   PUSHPLUS_TOKEN       PushPlus 微信 Token
+#   NOTIF_WEBHOOK_URL    通用 Webhook URL
+#   WECOM_WEBHOOK_URL    企业微信机器人 Webhook URL
+#   WHOIS_API_BASE       .cn 回退付费 WHOIS/可用性 API 基址
+#   WHOIS_API_KEY        付费 WHOIS API Key
+# ---------------------------------------------------------------------------

@@ -1,0 +1,81 @@
+classDiagram
+    class Domain {
+        +number id
+        +string domain
+        +EppStatus status
+        +string group_name
+        +string tags
+        +string note
+        +Priority priority
+        +number next_check_at
+        +number last_checked_at
+        +number last_notify_at
+    }
+    class StatusHistory {
+        +number id
+        +string domain
+        +EppStatus old_status
+        +EppStatus new_status
+        +number changed_at
+        +string trigger_action
+    }
+    class NotifConfig {
+        +number id
+        +Channel channel
+        +boolean enabled
+        +string recipient
+        +number suppress_interval_minutes
+    }
+    class AvailabilityChecker {
+        <<interface>>
+        +checkAvailability(domain) CheckResult
+    }
+    class Checker {
+        -routeByTld(domain) Source
+    }
+    class RdapClient {
+        +lookup(domain) RdapResult
+    }
+    class WhoisApiClient {
+        +lookup(domain) WhoisResult
+    }
+    class Notifier {
+        +dispatch(domain, event) void
+        -shouldSuppress(domain, channel) boolean
+    }
+    class Channel {
+        <<interface>>
+        +send(payload) void
+    }
+    class EmailChannel
+    class TelegramChannel
+    class PushplusChannel
+    class WebhookChannel
+    class WecomChannel
+    class Scheduler {
+        +runDueChecks(env) void
+    }
+    class AuthService {
+        +signSession() string
+        +verifySession(cookie) boolean
+    }
+    class ResponseHelper {
+        +ok(data) object
+        +fail(code, msg) object
+    }
+
+    AvailabilityChecker <|.. Checker
+    Checker ..> RdapClient : gTLD
+    Checker ..> WhoisApiClient : .cn 回退
+    Channel <|.. EmailChannel
+    Channel <|.. TelegramChannel
+    Channel <|.. PushplusChannel
+    Channel <|.. WebhookChannel
+    Channel <|.. WecomChannel
+    Notifier o-- Channel
+    Scheduler ..> Checker
+    Scheduler ..> Notifier
+    Scheduler ..> Domain : 读写
+    Scheduler ..> StatusHistory : 写
+    Notifier ..> NotifConfig : 读
+    AuthService ..> ResponseHelper
